@@ -419,6 +419,12 @@ lazy_static! {
             sel!(windowWillClose:),
             window_will_close as extern "C" fn(&mut Object, Sel, id),
         );
+
+        decl.add_method(
+            sel!(windowShouldClose:),
+            window_should_close as extern "C" fn(&mut Object, Sel, id) -> BOOL,
+        );
+
         ViewClass(decl.register())
     };
 }
@@ -821,6 +827,15 @@ extern "C" fn window_will_close(this: &mut Object, _: Sel, _window: id) {
         let view_state = &mut *(view_state as *mut ViewState);
         (*view_state).handler.destroy();
     }
+}
+
+extern "C" fn window_should_close(this: &mut Object, _: Sel, _window: id) -> BOOL {
+    unsafe {
+        let view_state: *mut c_void = *this.get_ivar("viewState");
+        let view_state = &mut *(view_state as *mut ViewState);
+        (*view_state).handler.request_close();
+    }
+    NO
 }
 
 impl WindowHandle {
