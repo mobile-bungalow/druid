@@ -22,7 +22,7 @@ You can find its changes [documented below](#060---2020-06-01).
 - `ScrollComponent` for ease of adding consistent, customized, scrolling behavior to a widget. ([#1107] by [@ForLoveOfCats])
 - Selection text color to textbox. ([#1093] by [@sysint64])
 - `BoxConstraints::UNBOUNDED` constant. ([#1126] by [@danieldulaney])
-- Close requests from the shell can now be intercepted ([#1118] by [@jneem], [#1204] by [@psychon], [#1238] by [@tay64])
+- Close requests from the shell can now be intercepted ([#1118] by [@jneem], [#1204] by [@psychon], [#1238] by [@tay64], [#1366] by [@mobile-bungalow])
 - The Lens derive now supports an `ignore` attribute. ([#1133] by [@jneem])
 - `request_update` in `EventCtx`. ([#1128] by [@raphlinus])
 - `ExtEventSink`s can now be obtained from widget methods. ([#1152] by [@jneem])
