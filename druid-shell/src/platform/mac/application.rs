@@ -20,15 +20,17 @@ use std::cell::RefCell;
 use std::ffi::c_void;
 use std::rc::Rc;
 
-use cocoa::appkit::{NSApp, NSApplication, NSApplicationActivationPolicyRegular};
-use cocoa::base::{id, nil, NO, YES};
-use cocoa::foundation::{NSArray, NSAutoreleasePool};
+use cocoa::appkit::{
+    NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSApplicationTerminateReply,
+};
+use cocoa::base::{id, nil, BOOL, NO, YES};
+use cocoa::foundation::{NSArray, NSAutoreleasePool, NSInteger};
 use lazy_static::lazy_static;
 use objc::declare::ClassDecl;
 use objc::runtime::{Class, Object, Sel};
 use objc::{class, msg_send, sel, sel_impl};
 
-use crate::application::AppHandler;
+use crate::application::{AppHandler, TerminationContext};
 
 use super::clipboard::Clipboard;
 use super::error::Error;
@@ -87,13 +89,29 @@ impl Application {
                     // We want to queue up the destruction of all our windows.
                     // Failure to do so will lead to resource leaks.
                     let windows: id = msg_send![self.ns_app, windows];
+
                     for i in 0..windows.count() {
                         let window: id = windows.objectAtIndex(i);
                         let () = msg_send![window, performSelectorOnMainThread: sel!(close) withObject: nil waitUntilDone: NO];
                     }
-                    // Stop sets a stop request flag in the OS.
-                    // The run loop is stopped after dealing with events.
-                    let () = msg_send![self.ns_app, stop: nil];
+
+                    let windows: id = msg_send![self.ns_app, windows];
+                    let mut should_terminate = false;
+
+                    if windows.count() == 0 {
+                        let del: id = msg_send![self.ns_app, delegate];
+                        let del: *mut c_void = *del.as_ref().unwrap().get_ivar(APP_HANDLER_IVAR);
+                        let del = &mut *(del as *mut DelegateState);
+
+                        should_terminate =
+                            del.application_should_terminate(TerminationContext::AllWindowsClosed);
+                    }
+
+                    if should_terminate {
+                        // Stop sets a stop request flag in the OS.
+                        // The run loop is stopped after dealing with events.
+                        let () = msg_send![self.ns_app, stop: nil];
+                    }
                 }
             }
         } else {
@@ -145,6 +163,14 @@ impl DelegateState {
             inner.command(command)
         }
     }
+
+    fn application_should_terminate(&mut self, ctx: TerminationContext) -> bool {
+        if let Some(inner) = self.handler.as_mut() {
+            inner.application_should_terminate(ctx)
+        } else {
+            true
+        }
+    }
 }
 
 struct AppDelegate(*const Class);
@@ -154,6 +180,7 @@ lazy_static! {
     static ref APP_DELEGATE: AppDelegate = unsafe {
         let mut decl = ClassDecl::new("DruidAppDelegate", class!(NSObject))
             .expect("App Delegate definition failed");
+
         decl.add_ivar::<*mut c_void>(APP_HANDLER_IVAR);
 
         decl.add_method(
@@ -162,9 +189,21 @@ lazy_static! {
         );
 
         decl.add_method(
+            sel!(applicationShouldTerminate:),
+            application_should_terminate as extern "C" fn(&mut Object, Sel, id) -> BOOL,
+        );
+
+        decl.add_method(
+            sel!(applicationShouldTerminateAfterLastWindowClosed:),
+            application_should_terminate_after_last_window_closed
+                as extern "C" fn(&mut Object, Sel, id) -> NSInteger,
+        );
+
+        decl.add_method(
             sel!(handleMenuItem:),
             handle_menu_item as extern "C" fn(&mut Object, Sel, id),
         );
+
         AppDelegate(decl.register())
     };
 }
@@ -176,6 +215,38 @@ extern "C" fn application_did_finish_launching(_this: &mut Object, _: Sel, _noti
         // until we have the main menu all set up. Otherwise the menu won't be interactable.
         ns_app.setActivationPolicy_(NSApplicationActivationPolicyRegular);
         let () = msg_send![ns_app, activateIgnoringOtherApps: YES];
+    }
+}
+
+extern "C" fn application_should_terminate(this: &mut Object, _: Sel, _: id) -> BOOL {
+    unsafe {
+        let inner: *mut c_void = *this.get_ivar(APP_HANDLER_IVAR);
+        let inner = &mut *(inner as *mut DelegateState);
+        let yes = (*inner).application_should_terminate(TerminationContext::QuitCommandReceived);
+
+        if yes {
+            YES
+        } else {
+            NO
+        }
+    }
+}
+
+extern "C" fn application_should_terminate_after_last_window_closed(
+    this: &mut Object,
+    _: Sel,
+    _: id,
+) -> NSInteger {
+    unsafe {
+        let inner: *mut c_void = *this.get_ivar(APP_HANDLER_IVAR);
+        let inner = &mut *(inner as *mut DelegateState);
+        let yes = (*inner).application_should_terminate(TerminationContext::AllWindowsClosed);
+
+        if yes {
+            NSApplicationTerminateReply::NSTerminateNow as NSInteger
+        } else {
+            NSApplicationTerminateReply::NSTerminateCancel as NSInteger
+        }
     }
 }
 

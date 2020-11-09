@@ -23,6 +23,19 @@ use crate::error::Error;
 use crate::platform::application as platform;
 use crate::util;
 
+/// Contextual information passed to the top-level [AppHandler] when
+/// [AppHandler::application_should_quit] is called. each variant
+/// represents a context in which the user may want to quitting behavior to
+/// be handled differently.
+pub enum TerminationContext {
+    /// A variant that represents the closure of the final window managed
+    /// by this application.
+    AllWindowsClosed,
+    /// A variant that represents the selection of the quit command
+    /// from a menu, dock, task manager or hotkey.
+    QuitCommandReceived,
+}
+
 /// A top-level handler that is not associated with any window.
 ///
 /// This is most important on macOS, where it is entirely normal for
@@ -40,6 +53,20 @@ pub trait AppHandler {
     /// Called when a menu item is selected.
     #[allow(unused_variables)]
     fn command(&mut self, id: u32) {}
+    /// # Note
+    ///
+    /// currently this is only called on the MacOs platform.
+    ///
+    /// Called when the application is trying to terminate, the reason for termination is
+    /// is passed through the `ctx` argument. If the return value is true, the application
+    /// will return control back to the function which called [application::run], otherwise
+    /// the event loop will keep polling.
+    fn application_should_terminate(&mut self, ctx: TerminationContext) -> bool {
+        match ctx {
+            TerminationContext::QuitCommandReceived => true,
+            TerminationContext::AllWindowsClosed => true,
+        }
+    }
 }
 
 /// The top level application object.

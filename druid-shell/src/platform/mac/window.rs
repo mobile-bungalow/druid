@@ -134,9 +134,9 @@ enum IdleKind {
 }
 
 /// This is the state associated with our custom NSView.
-struct ViewState {
+pub(crate) struct ViewState {
     nsview: WeakPtr,
-    handler: Box<dyn WinHandler>,
+    pub(crate) handler: Box<dyn WinHandler>,
     idle_queue: Arc<Mutex<Vec<IdleKind>>>,
     /// Tracks window focusing left clicks
     focus_click: bool,
