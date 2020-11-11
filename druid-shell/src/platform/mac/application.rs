@@ -31,6 +31,7 @@ use objc::runtime::{Class, Object, Sel};
 use objc::{class, msg_send, sel, sel_impl};
 
 use crate::application::{AppHandler, TerminationContext};
+use crate::platform::window::ViewState;
 
 use super::clipboard::Clipboard;
 use super::error::Error;
@@ -81,6 +82,7 @@ impl Application {
         }
     }
 
+    #[track_caller]
     pub fn quit(&self) {
         if let Ok(mut state) = self.state.try_borrow_mut() {
             if !state.quitting {
@@ -91,27 +93,20 @@ impl Application {
                     let windows: id = msg_send![self.ns_app, windows];
 
                     for i in 0..windows.count() {
-                        let window: id = windows.objectAtIndex(i);
-                        let () = msg_send![window, performSelectorOnMainThread: sel!(close) withObject: nil waitUntilDone: NO];
+                        let content_view: id = msg_send![windows.objectAtIndex(i), contentView];
+                        let subviews: id = msg_send![content_view, subviews];
+                        if subviews.count() > 0 {
+                            if let Some(view) = subviews.objectAtIndex(0).as_ref() {
+                                let state: *mut c_void = *view.get_ivar("viewState");
+                                let state = &mut *(state as *mut ViewState);
+                                (*state).handler.request_close();
+                            }
+                        }
                     }
 
-                    let windows: id = msg_send![self.ns_app, windows];
-                    let mut should_terminate = false;
-
-                    if windows.count() == 0 {
-                        let del: id = msg_send![self.ns_app, delegate];
-                        let del: *mut c_void = *del.as_ref().unwrap().get_ivar(APP_HANDLER_IVAR);
-                        let del = &mut *(del as *mut DelegateState);
-
-                        should_terminate =
-                            del.application_should_terminate(TerminationContext::AllWindowsClosed);
-                    }
-
-                    if should_terminate {
-                        // Stop sets a stop request flag in the OS.
-                        // The run loop is stopped after dealing with events.
-                        let () = msg_send![self.ns_app, stop: nil];
-                    }
+                    // Stop sets a stop request flag in the OS.
+                    // The run loop is stopped after dealing with events.
+                    let () = msg_send![self.ns_app, terminate: nil];
                 }
             }
         } else {
@@ -190,13 +185,13 @@ lazy_static! {
 
         decl.add_method(
             sel!(applicationShouldTerminate:),
-            application_should_terminate as extern "C" fn(&mut Object, Sel, id) -> BOOL,
+            application_should_terminate as extern "C" fn(&mut Object, Sel, id) -> NSInteger,
         );
 
         decl.add_method(
             sel!(applicationShouldTerminateAfterLastWindowClosed:),
             application_should_terminate_after_last_window_closed
-                as extern "C" fn(&mut Object, Sel, id) -> NSInteger,
+                as extern "C" fn(&mut Object, Sel, id) -> BOOL,
         );
 
         decl.add_method(
@@ -218,16 +213,16 @@ extern "C" fn application_did_finish_launching(_this: &mut Object, _: Sel, _noti
     }
 }
 
-extern "C" fn application_should_terminate(this: &mut Object, _: Sel, _: id) -> BOOL {
+extern "C" fn application_should_terminate(this: &mut Object, _: Sel, _: id) -> NSInteger {
     unsafe {
         let inner: *mut c_void = *this.get_ivar(APP_HANDLER_IVAR);
         let inner = &mut *(inner as *mut DelegateState);
         let yes = (*inner).application_should_terminate(TerminationContext::QuitCommandReceived);
 
         if yes {
-            YES
+            NSApplicationTerminateReply::NSTerminateNow as NSInteger
         } else {
-            NO
+            NSApplicationTerminateReply::NSTerminateCancel as NSInteger
         }
     }
 }
@@ -236,16 +231,16 @@ extern "C" fn application_should_terminate_after_last_window_closed(
     this: &mut Object,
     _: Sel,
     _: id,
-) -> NSInteger {
+) -> BOOL {
     unsafe {
         let inner: *mut c_void = *this.get_ivar(APP_HANDLER_IVAR);
         let inner = &mut *(inner as *mut DelegateState);
         let yes = (*inner).application_should_terminate(TerminationContext::AllWindowsClosed);
 
         if yes {
-            NSApplicationTerminateReply::NSTerminateNow as NSInteger
+            YES
         } else {
-            NSApplicationTerminateReply::NSTerminateCancel as NSInteger
+            NO
         }
     }
 }

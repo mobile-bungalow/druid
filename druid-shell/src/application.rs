@@ -61,11 +61,9 @@ pub trait AppHandler {
     /// is passed through the `ctx` argument. If the return value is true, the application
     /// will return control back to the function which called [application::run], otherwise
     /// the event loop will keep polling.
+    #[allow(unused_variables)]
     fn application_should_terminate(&mut self, ctx: TerminationContext) -> bool {
-        match ctx {
-            TerminationContext::QuitCommandReceived => true,
-            TerminationContext::AllWindowsClosed => true,
-        }
+        true
     }
 }
 
